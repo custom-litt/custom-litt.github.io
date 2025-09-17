@@ -1,1 +1,1 @@
-http://custom-litt.github.io:443/ota/api/v1/bin/firmware/2e40e56e-d0ed-4568-9879-c6938f52e773\v0.0.1\firmware.bin
+http://custom-litt.github.io:443/api/v1/bin/firmware/2e40e56e-d0ed-4568-9879-c6938f52e773\v0.0.1\firmware.bin
