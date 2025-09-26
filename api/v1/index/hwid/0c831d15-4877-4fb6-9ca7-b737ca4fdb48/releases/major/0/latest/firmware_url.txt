@@ -1,1 +1,1 @@
-https://custom-litt.github.io:80/api/v1/bin/firmware/0c831d15-4877-4fb6-9ca7-b737ca4fdb48\v0.0.1\firmware.bin
+http://custom-litt.github.io:80/api/v1/bin/firmware/0c831d15-4877-4fb6-9ca7-b737ca4fdb48\v0.0.1\firmware.bin
