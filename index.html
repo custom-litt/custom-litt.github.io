@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ESP32 Firmware Uploader</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <header class="banner">
+      <div class="banner__inner">
+        <h1>ESP32 Firmware Uploader</h1>
+        <p class="banner__tagline">
+          Connect an ESP32 or ESP32-S3 board, pick your panel size, and flash the matching firmware directly from your browser.
+        </p>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="card card--primary">
+        <h2>Connection</h2>
+        <p id="supportWarning" class="warning" hidden>
+          Your browser does not support the Web Serial API. Please use a recent version of Chrome, Edge, or another Chromium-based browser.
+        </p>
+        <div class="status">
+          <div>
+            <span class="status__label">Connection status:</span>
+            <span id="connectionStatus" class="status__value">Disconnected</span>
+          </div>
+          <div>
+            <span class="status__label">Detected chip:</span>
+            <span id="chipType" class="status__value status__value--muted">—</span>
+          </div>
+        </div>
+        <button id="connectButton" class="button button--primary">Connect device</button>
+      </section>
+
+      <section class="card">
+        <h2>Firmware selection</h2>
+        <form class="form" id="selectionForm">
+          <label class="form__field">
+            <span>Screen size</span>
+            <select id="panelSize" disabled>
+              <option value="" selected hidden>Select a size</option>
+              <option value="13">13 inch</option>
+              <option value="15">15 inch</option>
+            </select>
+          </label>
+          <label class="form__field">
+            <span>Firmware URL</span>
+            <output id="firmwareUrl" class="output">—</output>
+          </label>
+        </form>
+        <div class="actions">
+          <button id="flashButton" class="button" disabled>Upload firmware</button>
+          <button id="disconnectButton" class="button button--ghost" disabled>Disconnect</button>
+        </div>
+      </section>
+
+      <section class="card card--log">
+        <h2>Log</h2>
+        <div id="log" class="log" role="log" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <template id="logLineTemplate">
+      <div class="log__entry">
+        <time></time>
+        <span class="log__message"></span>
+      </div>
+    </template>
+
+    <script type="module" src="assets/main.js"></script>
+  </body>
+</html>
