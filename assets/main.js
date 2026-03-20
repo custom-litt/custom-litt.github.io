@@ -1,24 +1,26 @@
+import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.5.4/bundle.js";
+
 const FIRMWARE_MATRIX = {
-  esp32: {
+  "Legacy Pixlpro": {
     "13": {
-      url: "./api/v1/bin/firmware/0c831d15-4877-4fb6-9ca7-b737ca4fdb48/v0.0.1/firmware.bin",
+      uuid: "ac79bb5e-dc0c-4799-bcc4-2587fd898faf",
       address: 0x0,
       label: "ESP32 · 13 inch"
     },
     "15": {
-      url: "./api/v1/bin/firmware/2e40e56e-d0ed-4568-9879-c6938f52e773/v0.0.1/firmware.bin",
+      uuid: "d89d2bbd-d65c-4ec0-abd7-9967e0a461dd",
       address: 0x0,
       label: "ESP32 · 15 inch"
     }
   },
-  esp32s3: {
+  "Pixlpro": {
     "13": {
-      url: "./api/v1/bin/firmware/2e40e56e-d0ed-4568-9879-c6938f52e773/v0.0.1/firmware.bin",
+      uuid: "0c80a421-3cfb-4a5e-b93e-3f0024689582",
       address: 0x0,
       label: "ESP32-S3 · 13 inch"
     },
     "15": {
-      url: "./api/v1/bin/firmware/0c831d15-4877-4fb6-9ca7-b737ca4fdb48/v0.0.1/firmware.bin",
+      uuid: "2e40e56e-d0ed-4568-9879-c6938f52e773",
       address: 0x0,
       label: "ESP32-S3 · 15 inch"
     }
@@ -26,7 +28,6 @@ const FIRMWARE_MATRIX = {
 };
 
 const SUPPORTS_WEB_SERIAL = "serial" in navigator;
-const ESPLIB_URL = "https://cdn.jsdelivr.net/npm/esptool-js@0.9.1/dist/web/index.js";
 const BAUD_RATE = 921600;
 const INITIAL_BAUD_RATE = 115200;
 
@@ -38,13 +39,18 @@ const elements = {
   flashButton: document.getElementById("flashButton"),
   disconnectButton: document.getElementById("disconnectButton"),
   panelSize: document.getElementById("panelSize"),
-  firmwareUrl: document.getElementById("firmwareUrl"),
+  firmwareVersion: document.getElementById("firmwareVersion"),
+  uploadProgress: document.getElementById("uploadProgress"),
+  uploadProgressText: document.getElementById("uploadProgressText"),
+  uploadProgressBar: document.getElementById("uploadProgressBar"),
   log: document.getElementById("log"),
   logTemplate: document.getElementById("logLineTemplate")
 };
 
+const latestFirmwareCache = new Map();
+let latestFirmwareRequestId = 0;
+
 /** @typedef {{
-  module: any,
   port: any,
   transport: any,
   loader: any,
@@ -54,7 +60,6 @@ const elements = {
 
 /** @type {MutableState} */
 const state = {
-  module: null,
   port: null,
   transport: null,
   loader: null,
@@ -87,115 +92,170 @@ function log(message) {
 function setBusy(busy) {
   state.busy = busy;
   elements.connectButton.disabled = busy || !!state.port;
-  elements.flashButton.disabled = busy || !state.loader || !elements.panelSize.value;
   elements.disconnectButton.disabled = busy || !state.port;
   elements.panelSize.disabled = busy || !state.chipFamily;
+  updateFirmwareDisplay();
+}
+
+function setUploadProgress(percent, visible) {
+  const clamped = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+
+  if (elements.uploadProgress) {
+    elements.uploadProgress.hidden = !visible;
+  }
+  if (elements.uploadProgressText) {
+    elements.uploadProgressText.textContent = `${clamped}%`;
+  }
+  if (elements.uploadProgressBar) {
+    elements.uploadProgressBar.style.width = `${clamped}%`;
+  }
+  const track = elements.uploadProgress?.querySelector?.(".progress__track");
+  if (track) {
+    track.setAttribute("aria-valuenow", String(clamped));
+  }
 }
 
 function updateFirmwareDisplay() {
   const size = elements.panelSize.value;
   const family = state.chipFamily;
-  if (!size || !family) {
-    elements.firmwareUrl.textContent = "—";
+  const entry = size && family ? FIRMWARE_MATRIX?.[family]?.[size] : null;
+
+  if (!size || !family || !entry || !state.loader) {
+    if (elements.firmwareVersion) {
+      elements.firmwareVersion.textContent = "—";
+    }
     elements.flashButton.disabled = true;
     return;
   }
-  const entry = FIRMWARE_MATRIX?.[family]?.[size];
-  if (!entry) {
-    elements.firmwareUrl.textContent = "No firmware available for this combination";
-    elements.flashButton.disabled = true;
+
+  const cached = latestFirmwareCache.get(entry.uuid);
+  if (cached?.version) {
+    if (elements.firmwareVersion) {
+      elements.firmwareVersion.textContent = `v${cached.version}`;
+    }
+    elements.flashButton.disabled = state.busy;
     return;
   }
-  elements.firmwareUrl.textContent = entry.url;
-  elements.flashButton.disabled = state.busy;
+
+  if (elements.firmwareVersion) {
+    elements.firmwareVersion.textContent = "Loading…";
+  }
+  elements.flashButton.disabled = true;
+
+  const requestId = ++latestFirmwareRequestId;
+  resolveLatestFirmwareInfo(entry.uuid)
+    .then((info) => {
+      latestFirmwareCache.set(entry.uuid, info);
+      if (requestId !== latestFirmwareRequestId) return;
+      updateFirmwareDisplay();
+    })
+    .catch((error) => {
+      if (requestId !== latestFirmwareRequestId) return;
+      if (elements.firmwareVersion) {
+        elements.firmwareVersion.textContent = "Unavailable";
+      }
+      elements.flashButton.disabled = true;
+      log(`❌ Unable to resolve latest firmware version: ${error.message ?? error}`);
+      console.error(error);
+    });
 }
 
-async function importEsptool() {
-  if (state.module) {
-    return state.module;
+async function resolveLatestFirmwareInfo(uuid) {
+  const versionUrl = `./api/v1/index/hwid/${uuid}/releases/latest/version.txt`;
+  const response = await fetch(versionUrl, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to resolve latest version (${response.status} ${response.statusText})`);
   }
-  log(`Loading esptool-js module…`);
-  const module = await import(ESPLIB_URL);
-  state.module = module;
-  log(`esptool-js v${module.VERSION ?? "(unknown)"} loaded`);
-  return module;
+  const versionRaw = await response.text();
+  const version = String(versionRaw).trim();
+  if (!version) {
+    throw new Error("Latest version file was empty.");
+  }
+  const firmwareUrl = `./api/v1/bin/firmware/${uuid}/v${version}/firmware_full.bin`;
+  log(`resolved ${firmwareUrl} as URL for uuid ${uuid}`);
+  return { version, firmwareUrl };
 }
 
 function normalizeChipFamily(rawName) {
   if (!rawName) return null;
   const lowered = String(rawName).toLowerCase();
-  if (lowered.includes("s3")) return "esp32s3";
-  if (lowered.includes("esp32")) return "esp32";
+  if (lowered.includes("s3")) return "Pixlpro";
+  if (lowered.includes("esp32")) return "Legacy Pixlpro";
   return null;
-}
-
-async function openTransport(module, port) {
-  const { Transport } = module;
-  if (!Transport) {
-    throw new Error("esptool-js Transport helper is unavailable in this build");
-  }
-  const transport = new Transport(port);
-  if (transport.open) {
-    await transport.open({ baudrate: INITIAL_BAUD_RATE });
-  } else if (transport.connect) {
-    await transport.connect({ baudrate: INITIAL_BAUD_RATE });
-  }
-  return transport;
 }
 
 async function connectToDevice() {
   if (!SUPPORTS_WEB_SERIAL) return;
   setBusy(true);
   try {
-    const module = await importEsptool();
     const port = await navigator.serial.requestPort();
-    log("Serial port selected. Opening connection…");
-    const transport = await openTransport(module, port);
-    const { ESPLoader } = module;
-    if (!ESPLoader) {
-      throw new Error("esptool-js ESPLoader class is not available");
+    log("Serial port selected. Opening connection...");
+
+    const transport = new Transport(port, true);
+    const initialBaud = Number(INITIAL_BAUD_RATE);
+    
+    const terminalInterface = {
+      clean() {},
+      writeLine(data) { log(data); },
+      write(data) { log(data); },
     }
-    const loader = new ESPLoader(transport, {
-      log,
-      debug: false,
-      useStub: true
-    });
-    log("Connecting to ESP32…");
-    if (loader.connect) {
+
+    console.log(transport);
+
+    const ldOptions = {
+      transport: transport,
+      baudrate: initialBaud,
+      terminal: terminalInterface,
+      // debugLogging: false,
+    }
+
+    const loader = new ESPLoader(ldOptions);
+
+    log("Connecting to panel...");
+    let chipName = null;
+    if (typeof loader.main === "function") {
+      try {
+        chipName = await loader.main();
+      } catch (error) {
+        log(`Unable to initialize loader: ${error.message ?? error}`);
+        console.error(error);
+        throw error;
+      }
+    } else if (typeof loader.connect === "function") {
       await loader.connect();
-    } else if (loader.main) {
-      await loader.main();
-    } else if (loader.initialize) {
+    } else if (typeof loader.initialize === "function") {
       await loader.initialize();
     }
-    let chipName = null;
-    if (loader.chip) {
-      if (typeof loader.chip.getChipDescription === "function") {
-        try {
-          chipName = await loader.chip.getChipDescription();
-        } catch (error) {
-          log(`Unable to read chip description: ${error.message ?? error}`);
-        }
-      }
-      chipName = chipName ?? loader.chip.CHIP_NAME ?? loader.chip.name ?? null;
-    }
-    chipName = chipName ?? loader.CHIP_NAME ?? loader.chipName ?? null;
+
+    chipName =
+      chipName ??
+      loader?.chip?.CHIP_NAME ??
+      loader?.chip?.name ??
+      loader?.CHIP_NAME ??
+      loader?.chipName ??
+      null;
     const normalized = normalizeChipFamily(chipName);
     if (!normalized) {
       throw new Error(`Unsupported chip detected: ${chipName ?? "unknown"}`);
     }
+
     state.port = port;
     state.transport = transport;
     state.loader = loader;
     state.chipFamily = normalized;
     elements.connectionStatus.textContent = "Connected";
-    elements.chipType.textContent = chipName ?? normalized.toUpperCase();
+    elements.chipType.textContent = normalized;
     elements.chipType.classList.remove("status__value--muted");
-    log(`Connected to ${chipName}`);
+    log(`Connected to ${normalized}`);
 
-    if (loader.loadStub) {
-      log("Loading stub flasher…");
-      await loader.loadStub();
+    if (typeof loader.loadStub === "function") {
+      try {
+        log("Loading stub flasher…");
+        await loader.loadStub();
+      } catch (error) {
+        log(`Stub flasher not loaded (continuing): ${error.message ?? error}`);
+        console.warn(error);
+      }
     }
     if (loader.setBaudrate) {
       log(`Switching baud rate to ${BAUD_RATE}…`);
@@ -205,7 +265,8 @@ async function connectToDevice() {
     updateFirmwareDisplay();
   } catch (error) {
     log(`❌ ${error.message ?? error}`);
-    await disconnectDevice();
+    console.error(error);
+    await disconnectDevice(true);
   } finally {
     setBusy(false);
   }
@@ -227,42 +288,34 @@ elements.panelSize.addEventListener("change", () => {
 
 async function fetchFirmware(entry) {
   log(`Fetching firmware from ${entry.url}…`);
-  const response = await fetch(entry.url);
+  const response = await fetch(entry.url, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Failed to download firmware (${response.status} ${response.statusText})`);
   }
+
   const buffer = await response.arrayBuffer();
-  log(`Firmware size: ${(buffer.byteLength / 1024).toFixed(1)} KiB`);
   return new Uint8Array(buffer);
 }
 
 async function flashBinary(loader, fileEntry, options) {
-  if (typeof loader.flash === "function") {
-    log("Flashing via loader.flash()…");
-    const files = [fileEntry];
+  if (typeof loader.writeFlash === "function") {
+    log("Flashing via loader.writeFlash()…");
     const flashOptions = {
-      fileArray: files,
+      fileArray: [fileEntry],
       flashSize: "keep",
       flashMode: "keep",
       flashFreq: "keep",
       eraseAll: false,
       compress: true,
-      reportProgress: options.onProgress
+      reportProgress: typeof options?.onProgress === "function" ? options.onProgress : undefined,
+      calculateMD5Hash: (image) => {
+        const latin1String = Array.from(image, (byte) => String.fromCharCode(byte)).join("");
+        return CryptoJS.MD5(CryptoJS.enc.Latin1.parse(latin1String)).toString();
+      }
     };
-    return loader.flash(files, flashOptions);
-  }
-  if (typeof loader.writeFlash === "function") {
-    log("Flashing via loader.writeFlash()…");
-    return loader.writeFlash([fileEntry], {
-      flashSize: "keep",
-      eraseAll: false,
-      compress: true,
-      reportProgress: options.onProgress
-    });
-  }
-  if (typeof loader.flashData === "function") {
-    log("Flashing via loader.flashData()…");
-    return loader.flashData(fileEntry.data, fileEntry.address, false, options.onProgress);
+    await loader.writeFlash(flashOptions);
+    await loader.after();
+    return;
   }
   throw new Error("This version of esptool-js does not expose a supported flashing API.");
 }
@@ -271,30 +324,42 @@ async function flashSelectedFirmware() {
   if (!state.loader || !state.chipFamily || !elements.panelSize.value) {
     return;
   }
+  log(`fetching firmware for ${state.chipFamily}, ${elements.panelSize.value}`);
   const firmwareEntry = FIRMWARE_MATRIX[state.chipFamily]?.[elements.panelSize.value];
   if (!firmwareEntry) {
     log("No firmware available for this selection.");
     return;
   }
   setBusy(true);
+  setUploadProgress(0, true);
   try {
-    const firmwareData = await fetchFirmware(firmwareEntry);
+    const { version, firmwareUrl } = await resolveLatestFirmwareInfo(firmwareEntry.uuid);
+    log(`Latest firmware version: v${version}`);
+
+    const firmwareData = await fetchFirmware({ ...firmwareEntry, url: firmwareUrl });
     let lastProgress = -1;
-    const progressHandler = (value) => {
-      const percent = Math.round(Number(value ?? 0) * 100);
+    const progressHandler = (fileIndex, written, total) => {
+      const percent = Math.round((written / total) * 100);
       if (percent !== lastProgress) {
         lastProgress = percent;
-        log(`Flash progress: ${percent}%`);
+        setUploadProgress(percent, true);
       }
     };
-    await flashBinary(state.loader, {
-      data: firmwareData,
-      address: firmwareEntry.address,
-      fileName: firmwareEntry.url.split("/").pop() ?? "firmware.bin"
-    }, {
-      onProgress: progressHandler
+    await flashBinary(
+      state.loader, 
+      {
+        data: firmwareData,
+        address: Number.isFinite(firmwareEntry.address) ? firmwareEntry.address : 0,
+      }, 
+      {
+        onProgress: progressHandler
     });
-    if (state.loader?.hardReset) {
+
+    setUploadProgress(100, true);
+    if (typeof state.loader?.after === "function") {
+      log("Finalizing flash…");
+      await state.loader.after();
+    } else if (state.loader?.hardReset) {
       log("Resetting device…");
       await state.loader.hardReset();
     } else if (state.loader?.reset) {
@@ -303,9 +368,11 @@ async function flashSelectedFirmware() {
     }
     log("✅ Flash complete. The device should reboot shortly.");
   } catch (error) {
+    console.error(error);
     log(`❌ Flash failed: ${error.message ?? error}`);
   } finally {
     setBusy(false);
+    setUploadProgress(0, false);
   }
 }
 
@@ -315,8 +382,8 @@ elements.flashButton.addEventListener("click", () => {
   }
 });
 
-async function disconnectDevice() {
-  if (state.busy) return;
+async function disconnectDevice(force = false) {
+  if (state.busy && !force) return;
   if (!state.port && !state.transport) {
     return;
   }
@@ -356,6 +423,10 @@ async function disconnectDevice() {
     elements.chipType.classList.add("status__value--muted");
     elements.panelSize.value = "";
     elements.panelSize.disabled = true;
+    latestFirmwareRequestId++;
+    if (elements.firmwareVersion) {
+      elements.firmwareVersion.textContent = "—";
+    }
     updateFirmwareDisplay();
     setBusy(false);
   }

@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ESP32 Firmware Uploader</title>
+    <title>Custom Litt Firmware Flasher</title>
     <link rel="stylesheet" href="assets/styles.css" />
   </head>
   <body>
     <header class="banner">
       <div class="banner__inner">
-        <h1>ESP32 Firmware Uploader</h1>
+        <h1>Custom Litt Firmware Flasher Tool</h1>
         <p class="banner__tagline">
-          Connect an ESP32 or ESP32-S3 board, pick your panel size, and flash the matching firmware directly from your browser.
+          Connect your panel, pick your screen size, and upload the latest firmware patch directly from your browser.
         </p>
       </div>
     </header>
@@ -28,7 +28,7 @@
             <span id="connectionStatus" class="status__value">Disconnected</span>
           </div>
           <div>
-            <span class="status__label">Detected chip:</span>
+            <span class="status__label">Detected version:</span>
             <span id="chipType" class="status__value status__value--muted">—</span>
           </div>
         </div>
@@ -46,14 +46,32 @@
               <option value="15">15 inch</option>
             </select>
           </label>
+
           <label class="form__field">
-            <span>Firmware URL</span>
-            <output id="firmwareUrl" class="output">—</output>
+            <span>Firmware version</span>
+            <output id="firmwareVersion" class="output">—</output>
           </label>
         </form>
         <div class="actions">
           <button id="flashButton" class="button" disabled>Upload firmware</button>
           <button id="disconnectButton" class="button button--ghost" disabled>Disconnect</button>
+        </div>
+
+        <div id="uploadProgress" class="progress" hidden>
+          <div class="progress__meta">
+            <span class="progress__label">Upload progress</span>
+            <span id="uploadProgressText" class="progress__value">0%</span>
+          </div>
+          <div
+            class="progress__track"
+            role="progressbar"
+            aria-label="Firmware upload progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
+            <div id="uploadProgressBar" class="progress__bar" style="width: 0%"></div>
+          </div>
         </div>
       </section>
 
@@ -70,6 +88,7 @@
       </div>
     </template>
 
+    <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.js"></script>
     <script type="module" src="assets/main.js"></script>
   </body>
 </html>
