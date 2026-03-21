@@ -152,6 +152,27 @@ body {
   border: 1px solid rgba(15, 23, 42, 0.16);
 }
 
+.button--outlined {
+  background: transparent;
+  border: 2px solid rgb(72, 11, 102);
+  color: rgb(72, 11, 102);
+}
+
+.button--outlined:not(:disabled):hover {
+  background: rgba(72, 11, 102, 0.08);
+}
+
+.button--outlined:not(:disabled):active,
+.button--ghost:not(:disabled):active {
+  background: rgba(72, 11, 102, 0.15);
+}
+
+.button--outlined:not(:disabled):focus-visible,
+.button--ghost:not(:disabled):focus-visible {
+  outline: 3px solid rgba(72, 11, 102, 0.35);
+  outline-offset: 2px;
+}
+
 .form {
   display: grid;
   gap: 1.25rem;
@@ -282,5 +303,24 @@ select:focus {
   select,
   .output {
     background: rgba(17, 24, 39, 0.6);
+  }
+
+  .button--outlined {
+    border-color: rgba(192, 132, 224, 0.7);
+    color: rgba(220, 180, 240, 0.9);
+  }
+
+  .button--outlined:not(:disabled):hover {
+    background: rgba(192, 132, 224, 0.12);
+  }
+
+  .button--outlined:not(:disabled):active,
+  .button--ghost:not(:disabled):active {
+    background: rgba(192, 132, 224, 0.2);
+  }
+
+  .button--outlined:not(:disabled):focus-visible,
+  .button--ghost:not(:disabled):focus-visible {
+    outline-color: rgba(192, 132, 224, 0.4);
   }
 }

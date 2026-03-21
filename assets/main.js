@@ -308,10 +308,7 @@ async function flashBinary(loader, fileEntry, options) {
       eraseAll: false,
       compress: true,
       reportProgress: typeof options?.onProgress === "function" ? options.onProgress : undefined,
-      calculateMD5Hash: (image) => {
-        const latin1String = Array.from(image, (byte) => String.fromCharCode(byte)).join("");
-        return CryptoJS.MD5(CryptoJS.enc.Latin1.parse(latin1String)).toString();
-      }
+      calculateMD5Hash: (image) => CryptoJS.MD5(CryptoJS.enc.Latin1.parse(image)).toString()
     };
     await loader.writeFlash(flashOptions);
     await loader.after();
@@ -346,26 +343,16 @@ async function flashSelectedFirmware() {
       }
     };
     await flashBinary(
-      state.loader, 
+      state.loader,
       {
-        data: firmwareData,
+        data: Array.from(firmwareData, (byte) => String.fromCharCode(byte)).join(""),
         address: Number.isFinite(firmwareEntry.address) ? firmwareEntry.address : 0,
-      }, 
+      },
       {
         onProgress: progressHandler
     });
 
     setUploadProgress(100, true);
-    if (typeof state.loader?.after === "function") {
-      log("Finalizing flash…");
-      await state.loader.after();
-    } else if (state.loader?.hardReset) {
-      log("Resetting device…");
-      await state.loader.hardReset();
-    } else if (state.loader?.reset) {
-      log("Resetting device…");
-      await state.loader.reset();
-    }
     log("✅ Flash complete. The device should reboot shortly.");
   } catch (error) {
     console.error(error);
