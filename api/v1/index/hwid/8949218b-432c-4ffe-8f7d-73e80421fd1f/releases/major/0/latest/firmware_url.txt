@@ -1,0 +1,1 @@
+http://localhost:8000/api/v1/bin/firmware/8949218b-432c-4ffe-8f7d-73e80421fd1f/v0.0.0/firmware.bin
