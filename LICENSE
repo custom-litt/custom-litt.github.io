@@ -1,0 +1,18 @@
+Copyright 2024 CustomLitt Inc. All rights reserved.
+
+This software, including its source code, design, and documentation
+(the "Software"), is the proprietary and confidential property of
+CustomLitt Inc. No license, express or implied, is granted to any party to
+use, copy, modify, distribute, sublicense, or create derivative works of the
+Software without the prior written permission of CustomLitt Inc.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+CUSTOMLITT INC. BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+This license applies only to original code authored by CustomLitt Inc.
+Third-party components redistributed with the Software are licensed under
+their own terms; see assets/vendor/LICENSES.md.

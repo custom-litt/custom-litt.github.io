@@ -1,0 +1,6 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Firmware images and other binaries must never be line-ending normalized
+*.bin binary
+*.png binary

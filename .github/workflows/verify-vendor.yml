@@ -1,0 +1,17 @@
+name: verify-vendor
+
+# Supply-chain guard for the locally vendored, high-trust JS bundles
+# (esptool-js writes firmware to hardware; crypto-js runs on the same page).
+# If either file's bytes change without vendor.sha256 being updated in the same
+# commit, this job fails — so a swapped or tampered bundle can't ship silently.
+on:
+  push:
+  pull_request:
+
+jobs:
+  vendor-hashes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify vendored bundle integrity
+        run: sha256sum -c vendor.sha256
