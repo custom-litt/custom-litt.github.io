@@ -1,41 +1,87 @@
+/* Barlow Semi Condensed is vendored under assets/fonts (latin subset) — the CSP
+   (style-src/connect-src 'self') forbids CDN fonts, same as the vendored JS. */
+@font-face {
+  font-family: "Barlow Semi Condensed";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/barlow-semi-condensed-500.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Barlow Semi Condensed";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/barlow-semi-condensed-600.woff2") format("woff2");
+}
+
+/*
+ * LittLab design tokens (subset of the littlab app's main.css).
+ * Naming: --ll-{category}-{variant}
+ */
 :root {
-  color-scheme: light dark;
-  font-family: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  color-scheme: dark;
+  font-family: "Barlow Semi Condensed", "Helvetica", "Arial", sans-serif;
+  font-weight: 500;
   line-height: 1.5;
   font-size: 16px;
-  --color-bg: #f5f7fb;
-  --color-bg-card: #ffffffdd;
-  --color-border: #d2d9e8;
-  --color-primary: #1b5cff;
-  --color-primary-dark: #174dd4;
-  --color-text: #0a1633;
-  --color-muted: #6b7a99;
-  --color-warning: #b12b2b;
-  --shadow-elevated: 0 16px 32px -24px rgba(13, 35, 88, 0.6);
-  background: var(--color-bg);
-  color: var(--color-text);
+
+  --ll-primary: #8827bdaa;
+  --ll-primary-bright: #990bce;
+  --ll-primary-glass: rgba(88, 27, 140, 0.5);
+  --ll-primary-glass-strong: rgba(88, 27, 140, 0.7);
+  --ll-primary-glow: rgba(153, 11, 206, 0.6);
+
+  --ll-accent: #ad6ad1;
+  --ll-accent-muted: #c1a7cf;
+  --ll-accent-light: #e0c3f0;
+
+  --ll-bg-app: #1b1b1b;
+  --ll-bg-surface: #282828;
+  --ll-bg-surface-dark: #1c1c1c;
+
+  --ll-text-primary: #fff;
+  --ll-text-secondary: rgba(255, 255, 255, 0.7);
+  --ll-text-muted: rgba(255, 255, 255, 0.6);
+  --ll-text-subtle: rgba(255, 255, 255, 0.5);
+  --ll-text-disabled: rgba(255, 255, 255, 0.2);
+
+  --ll-border-subtle: rgba(255, 255, 255, 0.3);
+
+  --ll-danger: #f44336;
+  --ll-danger-border: rgba(244, 67, 54, 0.4);
+
+  --ll-status-connected: #4caf50;
+
+  --ll-shadow-default: 0 2px 4px rgba(0, 0, 0, 0.3);
+
+  background: var(--ll-bg-app);
+  color: var(--ll-text-primary);
 }
 
 * {
   box-sizing: border-box;
 }
 
+/* The hidden attribute must win over author display values (e.g. .progress's
+   display: grid), otherwise "hidden" elements render. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at top left, rgb(31, 49, 113, 0.07), transparent 55%),
-    radial-gradient(circle at bottom right, rgb(72, 11, 102, 0.08), transparent 55%),
-    var(--color-bg);
+  background: var(--ll-bg-app);
   display: flex;
   flex-direction: column;
 }
 
 .banner {
-  padding: 3.5rem 1.5rem 2rem;
+  padding: 3rem 1.5rem 2.5rem;
   text-align: center;
-  background: linear-gradient(135deg, rgba(31, 49, 113, 0.82), rgba(72, 11, 102, 0.9));
-  color: white;
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(88, 27, 140, 0.35), rgba(27, 27, 27, 0));
 }
 
 .banner__inner {
@@ -43,28 +89,44 @@ body {
   max-width: 720px;
 }
 
+.banner h1 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.banner__accent {
+  color: var(--ll-accent);
+}
+
 .banner__tagline {
   margin: 0.75rem auto 0;
   max-width: 580px;
   font-size: 1.05rem;
-  opacity: 0.92;
+  color: var(--ll-text-secondary);
 }
 
 .layout {
   width: min(960px, 92vw);
-  margin: -2rem auto 3rem;
+  margin: 0 auto 3rem;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.75rem;
+  gap: 1rem;
 }
 
 .card {
-  background: var(--color-bg-card);
-  padding: 1.75rem;
-  border-radius: 1.25rem;
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-elevated);
-  backdrop-filter: blur(12px);
+  background: var(--ll-bg-surface);
+  padding: 1.25rem 1.5rem 1.5rem;
+  border-radius: 10px;
+  box-shadow: var(--ll-shadow-default);
+}
+
+.card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ll-text-secondary);
 }
 
 .card--primary {
@@ -88,7 +150,7 @@ body {
 }
 
 .status__label {
-  color: var(--color-muted);
+  color: var(--ll-text-muted);
   font-size: 0.85rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -100,15 +162,15 @@ body {
 }
 
 .status__value--muted {
-  color: var(--color-muted);
+  color: var(--ll-text-muted);
 }
 
 .warning {
-  border: 1px solid rgba(177, 43, 43, 0.3);
-  background: rgba(177, 43, 43, 0.07);
-  color: var(--color-warning);
+  border: 1px solid var(--ll-danger-border);
+  background: rgba(244, 67, 54, 0.08);
+  color: var(--ll-danger);
   padding: 0.75rem 1rem;
-  border-radius: 0.75rem;
+  border-radius: 10px;
   margin-bottom: 1rem;
 }
 
@@ -125,60 +187,71 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: 999px;
-  padding: 0.75rem 1.5rem;
-  font-weight: 600;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 0.6rem 1.5rem;
+  font-family: inherit;
+  font-weight: 500;
   font-size: 1rem;
   cursor: pointer;
-  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
-  background: rgba(15, 23, 42, 0.08);
-  color: var(--color-text);
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  background: transparent;
+  color: var(--ll-text-primary);
 }
 
 .button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
-  transform: none;
-}
-
-.button:not(:disabled):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 20px -18px rgba(15, 23, 42, 0.55);
+  color: var(--ll-text-disabled);
 }
 
 .button--primary {
-  background: rgb(72, 11, 102);
-  color: #fff;
+  background: var(--ll-primary-glass);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--ll-shadow-default);
+  color: var(--ll-text-primary);
 }
 
 .button--primary:not(:disabled):hover {
-  background: var(--color-primary-dark);
+  background: var(--ll-primary-glass-strong);
+}
+
+.button--primary:disabled {
+  background: transparent;
+  border-color: var(--ll-border-subtle);
 }
 
 .button--ghost {
   background: transparent;
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  color: var(--ll-text-muted);
+}
+
+.button--ghost:not(:disabled):hover {
+  color: var(--ll-text-primary);
 }
 
 .button--outlined {
   background: transparent;
-  border: 2px solid rgb(72, 11, 102);
-  color: rgb(72, 11, 102);
+  border-color: var(--ll-accent);
+  color: var(--ll-accent-light);
+}
+
+.button--outlined:disabled {
+  border-color: var(--ll-text-disabled);
 }
 
 .button--outlined:not(:disabled):hover {
-  background: rgba(72, 11, 102, 0.08);
+  background: var(--ll-primary-glass);
 }
 
 .button--outlined:not(:disabled):active,
 .button--ghost:not(:disabled):active {
-  background: rgba(72, 11, 102, 0.15);
+  background: var(--ll-primary-glass-strong);
 }
 
 .button--outlined:not(:disabled):focus-visible,
-.button--ghost:not(:disabled):focus-visible {
-  outline: 3px solid rgba(72, 11, 102, 0.35);
+.button--ghost:not(:disabled):focus-visible,
+.button--primary:not(:disabled):focus-visible {
+  outline: 3px solid var(--ll-primary-glow);
   outline-offset: 2px;
 }
 
@@ -192,21 +265,28 @@ body {
   display: grid;
   gap: 0.5rem;
   font-size: 0.95rem;
+  color: var(--ll-text-muted);
 }
 
 select,
 .output {
-  border-radius: 0.75rem;
-  border: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.85);
+  border-radius: 10px;
+  border: 1px solid var(--ll-border-subtle);
+  background: var(--ll-bg-surface-dark);
   padding: 0.65rem 0.9rem;
   font-size: 0.95rem;
-  color: inherit;
+  color: var(--ll-text-primary);
   font-family: inherit;
 }
 
+select:disabled {
+  color: var(--ll-text-disabled);
+  border-color: var(--ll-text-disabled);
+}
+
 select:focus {
-  outline: 3px solid rgba(27, 92, 255, 0.2);
+  outline: none;
+  border-color: var(--ll-accent);
 }
 
 .actions {
@@ -232,7 +312,7 @@ select:focus {
 }
 
 .progress__label {
-  color: var(--color-muted);
+  color: var(--ll-text-muted);
   font-size: 0.85rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -244,31 +324,31 @@ select:focus {
 }
 
 .progress__track {
-  height: 0.75rem;
-  border-radius: 999px;
+  height: 0.5rem;
+  border-radius: 2px;
   overflow: hidden;
-  border: 1px solid var(--color-border);
-  background: rgba(15, 23, 42, 0.08);
+  background: var(--ll-accent-muted);
 }
 
 .progress__bar {
   height: 100%;
   width: 0%;
-  background: var(--color-primary);
+  background: var(--ll-primary-bright);
+  box-shadow: 0 0 8px var(--ll-primary-glow);
   transition: width 120ms linear;
 }
 
 .log {
   height: 280px;
   overflow: auto;
-  border-radius: 0.75rem;
-  border: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.7);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--ll-bg-surface-dark);
   padding: 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.85rem;
 }
 
@@ -279,7 +359,7 @@ select:focus {
 }
 
 .log__entry time {
-  color: var(--color-muted);
+  color: var(--ll-text-subtle);
   font-size: 0.75rem;
   min-width: 4.5rem;
 }
@@ -287,49 +367,5 @@ select:focus {
 .log__message {
   flex: 1;
   word-break: break-word;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #0f1629;
-    --color-bg-card: rgba(17, 24, 39, 0.86);
-    --color-border: rgba(255, 255, 255, 0.08);
-    --color-text: #f8fbff;
-    --color-muted: rgba(248, 251, 255, 0.65);
-    background: var(--color-bg);
-  }
-
-  body {
-    background: radial-gradient(circle at top left, rgba(72, 11, 102, 0.25), transparent 55%),
-      radial-gradient(circle at bottom right, rgba(31, 49, 113, 0.18), transparent 55%),
-      var(--color-bg);
-  }
-
-  .log {
-    background: rgba(17, 24, 39, 0.65);
-  }
-
-  select,
-  .output {
-    background: rgba(17, 24, 39, 0.6);
-  }
-
-  .button--outlined {
-    border-color: rgba(192, 132, 224, 0.7);
-    color: rgba(220, 180, 240, 0.9);
-  }
-
-  .button--outlined:not(:disabled):hover {
-    background: rgba(192, 132, 224, 0.12);
-  }
-
-  .button--outlined:not(:disabled):active,
-  .button--ghost:not(:disabled):active {
-    background: rgba(192, 132, 224, 0.2);
-  }
-
-  .button--outlined:not(:disabled):focus-visible,
-  .button--ghost:not(:disabled):focus-visible {
-    outline-color: rgba(192, 132, 224, 0.4);
-  }
+  color: var(--ll-text-secondary);
 }
