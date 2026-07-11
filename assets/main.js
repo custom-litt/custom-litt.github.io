@@ -288,25 +288,34 @@ async function connectToDevice() {
     log("Serial port selected. Opening connection...");
 
     const { ESPLoader, Transport } = await loadEsptool();
-    const transport = new Transport(port, true);
-    const initialBaud = Number(INITIAL_BAUD_RATE);
-    
+    // Transport's second parameter is `tracing`: it console-logs AND accumulates every
+    // serial read/write into an unbounded traceLog string — never enable it for real flashes.
+    const transport = new Transport(port);
+
     const terminalInterface = {
       clean() {},
       writeLine(data) { log(data); },
       write(data) { log(data); },
     }
 
-    console.log(transport);
-
     const ldOptions = {
       transport: transport,
-      baudrate: initialBaud,
+      // `baudrate` is the TARGET baud that changeBaud() switches to after the handshake;
+      // `romBaudrate` is what the ROM-loader sync runs at.
+      baudrate: BAUD_RATE,
+      romBaudrate: INITIAL_BAUD_RATE,
       terminal: terminalInterface,
-      // debugLogging: false,
     }
 
     const loader = new ESPLoader(ldOptions);
+
+    // Register with the shared state BEFORE the handshake: loader.main() opens the OS
+    // serial port, so if it (or the chip check below) throws, the catch block's
+    // disconnectDevice(true) must be able to find and close the port — otherwise the tab
+    // keeps it held and every retry fails with a misleading "port is in use" error.
+    state.port = port;
+    state.transport = transport;
+    state.loader = loader;
 
     log("Connecting to panel...");
     let chipName = null;
@@ -336,9 +345,6 @@ async function connectToDevice() {
       throw new Error(`Unsupported chip detected: ${chipName ?? "unknown"}`);
     }
 
-    state.port = port;
-    state.transport = transport;
-    state.loader = loader;
     state.chipFamily = normalized;
     const portInfo = portBridge(port);
     if (isPortChipMismatch(portInfo, normalized)) {
@@ -359,9 +365,12 @@ async function connectToDevice() {
         console.warn(error);
       }
     }
-    if (loader.setBaudrate) {
+    // esptool-js never switches baud on its own (and has no setBaudrate method — the old
+    // guard here silently skipped, leaving the whole flash at 115200). changeBaud() moves
+    // the link to the ESPLoader's `baudrate` option (921600).
+    if (typeof loader.changeBaud === "function") {
       log(`Switching baud rate to ${BAUD_RATE}…`);
-      await loader.setBaudrate(BAUD_RATE);
+      await loader.changeBaud();
     }
     elements.panelSize.disabled = false;
     updateFirmwareDisplay();
