@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Flasher test harness</title>
+    <style>
+      body { font: 14px/1.6 system-ui, sans-serif; margin: 2rem; background: #0e0f1a; color: #e6e7ee; }
+      h1 { font-size: 1.15rem; }
+      .pass { color: #5fd38d; }
+      .fail { color: #ff6b6b; }
+      .case { margin: 0.15rem 0; white-space: pre-wrap; }
+      .summary { margin-top: 1rem; font-weight: 700; }
+      code { background: #1b1d2e; padding: 0.1em 0.35em; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>Flasher test harness</h1>
+    <p>
+      Zero-dependency, in-browser. Serve over <code>http(s)://</code> (ES modules need it),
+      e.g. <code>python -m http.server</code> then open <code>/test/harness.html</code>.
+    </p>
+    <div id="out"></div>
+
+    <script type="module">
+      import {
+        serialError, makeFakePort, makeFakeSerial, makeFakeLoader,
+      } from "./fake-serial.js";
+      import {
+        portBridge, classifyConnectError, detectPlatform, normalizeChipFamily,
+      } from "../assets/device_detection.js";
+
+      // --- tiny runner ------------------------------------------------------
+      const out = document.getElementById("out");
+      let pass = 0, fail = 0;
+      const line = (t, cls) => {
+        const d = document.createElement("div");
+        d.className = `case ${cls}`;
+        d.textContent = t;
+        out.appendChild(d);
+      };
+      const ok = (n) => { pass++; line(`✓ ${n}`, "pass"); };
+      const bad = (n, e) => { fail++; line(`✗ ${n} — ${e?.message ?? e}`, "fail"); };
+      async function test(name, fn) {
+        try { await fn(); ok(name); } catch (e) { bad(name, e); }
+      }
+      function assert(cond, msg = "assertion failed") { if (!cond) throw new Error(msg); }
+      const eq = (a, b, msg) => assert(Object.is(a, b), msg ?? `expected ${b}, got ${a}`);
+
+      // --- example tests proving the fakes work (run today) -----------------
+      await test("fake port reports its VID", () => {
+        eq(makeFakePort({ vid: 0x303a }).getInfo().usbVendorId, 0x303a);
+      });
+      await test("requestPort 'no-port' throws NotFoundError", async () => {
+        const s = makeFakeSerial({ requestBehavior: "no-port" });
+        try { await s.requestPort(); throw new Error("did not throw"); }
+        catch (e) { eq(e.name, "NotFoundError"); }
+      });
+      await test("requestPort 'blocked' throws SecurityError", async () => {
+        const s = makeFakeSerial({ requestBehavior: "blocked" });
+        try { await s.requestPort(); throw new Error("did not throw"); }
+        catch (e) { eq(e.name, "SecurityError"); }
+      });
+      await test("getPorts + connect/disconnect events fire", async () => {
+        const s = makeFakeSerial();
+        const p = makeFakePort({ vid: 0x10c4 });
+        let connected = false, disconnected = false;
+        s.addEventListener("connect", () => (connected = true));
+        s.addEventListener("disconnect", () => (disconnected = true));
+        s._addPort(p);    assert(connected, "connect not fired");
+        eq((await s.getPorts()).length, 1);
+        s._removePort(p); assert(disconnected, "disconnect not fired");
+        eq((await s.getPorts()).length, 0);
+      });
+      await test("fake loader reports chip + flashes to 100%", async () => {
+        const l = makeFakeLoader({ chipName: "ESP32-S3" });
+        eq(await l.main(), "ESP32-S3");
+        let last = -1;
+        await l.writeFlash({ reportProgress: (_i, w, t) => { last = Math.round((w / t) * 100); } });
+        eq(last, 100);
+      });
+      await test("fake loader 'drop' aborts mid-flash with NetworkError", async () => {
+        const l = makeFakeLoader({ flash: "drop" });
+        try { await l.writeFlash({ reportProgress() {} }); throw new Error("did not throw"); }
+        catch (e) { eq(e.name, "NetworkError"); }
+      });
+
+      // --- real assets/device_detection.js logic, exercised in a real browser ---------
+      await test("device: classifyConnectError NotFoundError -> no-port", () =>
+        eq(classifyConnectError(serialError("NotFoundError")), "no-port"));
+      await test("device: classifyConnectError SecurityError -> blocked", () =>
+        eq(classifyConnectError(serialError("SecurityError")), "blocked"));
+      await test("device: portBridge 0x303a -> s3-native (driverless)", () => {
+        const b = portBridge(makeFakePort({ vid: 0x303a }));
+        eq(b.bridge, "s3-native"); eq(b.driverNeeded, false);
+      });
+      await test("device: portBridge 0x10c4 -> cp210x (driver needed)", () => {
+        const b = portBridge(makeFakePort({ vid: 0x10c4 }));
+        eq(b.bridge, "cp210x"); eq(b.driverNeeded, true);
+      });
+      await test("device: normalizeChipFamily ESP32-S3 -> Pixlpro", () =>
+        eq(normalizeChipFamily("ESP32-S3"), "Pixlpro"));
+      await test("device: detectPlatform parses Windows Chrome UA", () =>
+        eq(detectPlatform({ ua: "Mozilla/5.0 (Windows NT 10.0) Chrome/120 Safari/537.36" }).os, "windows"));
+
+      line(`${pass} passed, ${fail} failed`, fail ? "fail summary" : "pass summary");
+    </script>
+  </body>
+</html>

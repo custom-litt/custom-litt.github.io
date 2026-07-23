@@ -3,13 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- All scripts/styles/data are served same-origin (esptool-js and crypto-js are vendored under
+         assets/vendor). This CSP blocks any third-party or inline script, so a future regression that
+         reintroduces a remote <script> or CDN import is refused by the browser before it can run on a
+         page that writes firmware to hardware. Web Serial is not governed by CSP and is unaffected. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
     <title>Custom Litt Firmware Flasher</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <meta name="theme-color" content="#1b1b1b" />
     <link rel="stylesheet" href="assets/styles.css" />
   </head>
   <body>
     <header class="banner">
       <div class="banner__inner">
-        <h1>Custom Litt Firmware Flasher Tool</h1>
+        <h1>Custom Litt <span class="banner__accent">Firmware Flasher</span></h1>
         <p class="banner__tagline">
           Connect your panel, pick your screen size, and upload the latest firmware patch directly from your browser.
         </p>
@@ -20,7 +30,7 @@
       <section class="card card--primary">
         <h2>Connection</h2>
         <p id="supportWarning" class="warning" hidden>
-          Your browser does not support the Web Serial API. Please use a recent version of Chrome, Edge, or another Chromium-based browser.
+          This flasher needs the Web Serial API. Please open this page in Google Chrome on a desktop or laptop (Microsoft Edge also works). It won't work in Firefox or Safari, or on iPhone, iPad, or Android.
         </p>
         <div class="status">
           <div>
@@ -33,6 +43,7 @@
           </div>
         </div>
         <button id="connectButton" class="button button--primary">Connect device</button>
+        <div id="connectionHelp" class="warning" hidden></div>
       </section>
 
       <section class="card">
@@ -70,7 +81,7 @@
             aria-valuemax="100"
             aria-valuenow="0"
           >
-            <div id="uploadProgressBar" class="progress__bar" style="width: 0%"></div>
+            <div id="uploadProgressBar" class="progress__bar"></div>
           </div>
         </div>
       </section>
@@ -88,7 +99,15 @@
       </div>
     </template>
 
-    <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.js"></script>
+    <!-- Vendored locally (assets/vendor) so flashing doesn't depend on any CDN being reachable.
+         The integrity hash pins these exact bytes: if crypto-js.min.js is ever swapped, the browser
+         refuses to run it. Same-origin, so no crossorigin attribute is needed. Regenerate the hash
+         with: node -e "const c=require('crypto'),f=require('fs');console.log('sha384-'+c.createHash('sha384').update(f.readFileSync('assets/vendor/crypto-js.min.js')).digest('base64'))" -->
+    <script
+      src="assets/vendor/crypto-js.min.js"
+      integrity="sha384-mgWScxWVKP8F7PBbpNp7i/aSb17kN0LcifBpahAplF3Mn0GR4/u1oMpWIm2rD8yY"
+    ></script>
+    <script type="module" src="assets/support-gate.js"></script>
     <script type="module" src="assets/main.js"></script>
   </body>
 </html>

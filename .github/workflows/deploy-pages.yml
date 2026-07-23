@@ -1,0 +1,57 @@
+name: deploy-pages
+
+# Publishes ONLY the runtime files a client needs — index.html, assets/, api/ — to GitHub Pages.
+# Everything else (test/, .github/, vendor.sha256, all *.md notes, dotfiles) stays in the repo as
+# source of truth but is never served. The published site is an allow-list: if a file isn't copied
+# in the "Stage" step below, it does not reach clients.
+#
+# One-time setup: repo Settings → Pages → Source → "GitHub Actions".
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; let an in-progress publish finish rather than cancelling it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Gate publishing on bundle integrity — never ship a tampered/swapped vendored bundle.
+      - name: Verify vendored bundle integrity
+        run: sha256sum -c vendor.sha256
+
+      # Allow-list: copy ONLY the vital runtime files into the publish directory.
+      - name: Stage vital runtime files
+        run: |
+          mkdir -p dist
+          cp index.html dist/
+          cp -r assets dist/
+          cp -r api dist/
+          touch dist/.nojekyll   # serve verbatim; don't run Jekyll over the files
+          echo "Published tree:"; find dist -type f | sort
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
