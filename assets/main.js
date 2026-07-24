@@ -298,11 +298,18 @@ async function connectToDevice() {
       write(data) { log(data); },
     }
 
+    // ESP32-S3 native USB-Serial-JTAG (VID 0x303a) runs the link at a fixed USB speed — the
+    // "baud rate" is a fiction there, so pushing it to 921600 buys nothing and desyncs the
+    // flash ("Invalid head of packet"). Only the CP210x UART bridge (legacy panels) actually
+    // benefits from the faster baud, so use it there and stay at 115200 on native USB.
+    const isNativeUsb = portBridge(port).bridge === "s3-native";
+    const flashBaud = isNativeUsb ? INITIAL_BAUD_RATE : BAUD_RATE;
+
     const ldOptions = {
       transport: transport,
       // `baudrate` is the TARGET baud that changeBaud() switches to after the handshake;
       // `romBaudrate` is what the ROM-loader sync runs at.
-      baudrate: BAUD_RATE,
+      baudrate: flashBaud,
       romBaudrate: INITIAL_BAUD_RATE,
       terminal: terminalInterface,
     }
@@ -365,11 +372,12 @@ async function connectToDevice() {
         console.warn(error);
       }
     }
-    // esptool-js never switches baud on its own (and has no setBaudrate method — the old
-    // guard here silently skipped, leaving the whole flash at 115200). changeBaud() moves
-    // the link to the ESPLoader's `baudrate` option (921600).
-    if (typeof loader.changeBaud === "function") {
-      log(`Switching baud rate to ${BAUD_RATE}…`);
+    // changeBaud() moves the link to the ESPLoader's `baudrate` option. Skip it on native USB,
+    // where the target is already the ROM baud (115200) and a high-baud switch only desyncs
+    // the flash. loader.main() already performs this switch when target != romBaudrate, so this
+    // is a belt-and-suspenders call for the CP210x path only.
+    if (flashBaud !== INITIAL_BAUD_RATE && typeof loader.changeBaud === "function") {
+      log(`Switching baud rate to ${flashBaud}…`);
       await loader.changeBaud();
     }
     elements.panelSize.disabled = false;

@@ -1,0 +1,11 @@
+{
+  "name": "custom-litt-flasher",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Static web firmware flasher (GitHub Pages). No build step; serve files as-is.",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "test": "node test/device_detection.test.mjs"
+  }
+}
