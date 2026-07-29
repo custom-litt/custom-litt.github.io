@@ -50,11 +50,13 @@
         <h2>Firmware selection</h2>
         <form class="form" id="selectionForm">
           <label class="form__field">
-            <span>Screen size</span>
-            <select id="panelSize" disabled>
-              <option value="" selected hidden>Select a size</option>
-              <option value="13">13 inch</option>
-              <option value="15">15 inch</option>
+            <span>Model</span>
+            <!-- Options are built at connect time from FIRMWARE_MATRIX, because they depend on
+                 which module was detected: the legacy module offers the two panel sizes, the
+                 new one also offers the cable hider and the clock. Deliberately empty here so
+                 the markup can never offer a model the firmware matrix doesn't back. -->
+            <select id="model" disabled>
+              <option value="" selected hidden>Select a model</option>
             </select>
           </label>
 
