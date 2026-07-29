@@ -2,7 +2,8 @@
 // Run: node test/device_detection.test.mjs
 import { VID, portBridge, classifyConnectError, detectPlatform, driverLinkFor,
          normalizeChipFamily, describeHardware, isPortChipMismatch, webSerialStatus,
-         hardwareTipFor, parseSha256, bytesToHex } from "../assets/device_detection.js";
+         hardwareTipFor, parseSha256, bytesToHex, planBaudRates,
+         FIRMWARE_MATRIX, modelOptionsFor } from "../assets/device_detection.js";
 import { makeFakePort, serialError } from "./fake-serial.js";
 
 const UA = {
@@ -206,6 +207,135 @@ test("bytesToHex: Uint8Array -> lowercase, zero-padded hex", () =>
 test("bytesToHex: accepts ArrayBuffer (crypto.subtle.digest output shape)", () =>
   eq(bytesToHex(new Uint8Array([0x01, 0x02, 0xff]).buffer), "0102ff"));
 test("bytesToHex: empty -> empty string", () => eq(bytesToHex(new Uint8Array([])), ""));
+
+// --- FIRMWARE_MATRIX + modelOptionsFor (which products each module can be flashed as) ---
+// The hardware ID is embedded into the firmware image at build time (EMBED_TXTFILES
+// hardware_id.txt), so it identifies the FIRMWARE, not the board — a device in download mode
+// cannot be asked what product it is. Only the chip is detectable, so the operator picks the
+// model, and these UUIDs are the only thing standing between a clock and panel firmware.
+// Source of truth: pixlpro/firmware/out/README.md.
+const HWID = {
+  "13-2022-v3":          "ac79bb5e-dc0c-4799-bcc4-2587fd898faf",
+  "15-2022-v3":          "d89d2bbd-d65c-4ec0-abd7-9967e0a461dd",
+  "bandgap-gamma-13":    "0c80a421-3cfb-4a5e-b93e-3f0024689582",
+  "bandgap-gamma-15":    "2e40e56e-d0ed-4568-9879-c6938f52e773",
+  "bandgap-cable-hider": "3481efbd-8ada-42e4-ab3f-05968546e82d",
+  "bandgap-gamma-clock": "8949218b-432c-4ffe-8f7d-73e80421fd1f",
+};
+
+test("matrix: legacy module offers exactly 13 and 15 inch", () =>
+  eq(modelOptionsFor("Legacy Pixlpro").map((o) => o.value).join(","), "13,15"));
+test("matrix: new module offers 13, 15 and clock in that order", () =>
+  eq(modelOptionsFor("Pixlpro").map((o) => o.value).join(","), "13,15,clock"));
+
+// Cable hider stays wired up but unlisted: its firmware isn't published to api/ yet, so
+// offering it would only ever resolve "Unavailable". Deleting the entry would mean rebuilding
+// it later from scratch; hiding it means dropping `hidden` re-enables it in one line.
+test("matrix: cable-hider is still plumbed in, just hidden", () => {
+  const entry = FIRMWARE_MATRIX["Pixlpro"]["cable-hider"];
+  assert(entry, "cable-hider entry must remain in the matrix");
+  eq(entry.hidden, true);
+});
+test("matrix: cable-hider is absent from the dropdown while hidden", () =>
+  assert(!modelOptionsFor("Pixlpro").some((o) => o.value === "cable-hider"),
+    "hidden model must not be offered"));
+test("modelOptionsFor: hidden entries are filtered out generally", () => {
+  const visible = modelOptionsFor("Pixlpro").map((o) => o.value);
+  for (const [key, entry] of Object.entries(FIRMWARE_MATRIX["Pixlpro"])) {
+    eq(visible.includes(key), !entry.hidden, `${key} visibility should follow its hidden flag`);
+  }
+});
+
+test("matrix: legacy 13/15 map to the 2022-v3 hardware ids", () => {
+  eq(FIRMWARE_MATRIX["Legacy Pixlpro"]["13"].uuid, HWID["13-2022-v3"]);
+  eq(FIRMWARE_MATRIX["Legacy Pixlpro"]["15"].uuid, HWID["15-2022-v3"]);
+});
+test("matrix: new 13/15 map to the bandgap-gamma hardware ids", () => {
+  eq(FIRMWARE_MATRIX["Pixlpro"]["13"].uuid, HWID["bandgap-gamma-13"]);
+  eq(FIRMWARE_MATRIX["Pixlpro"]["15"].uuid, HWID["bandgap-gamma-15"]);
+});
+test("matrix: cable-hider is the 54x8 two-board product, not the testing single", () => {
+  eq(FIRMWARE_MATRIX["Pixlpro"]["cable-hider"].uuid, HWID["bandgap-cable-hider"]);
+  assert(FIRMWARE_MATRIX["Pixlpro"]["cable-hider"].uuid !== "910105d3-3c73-4072-ad82-59c10be6993c",
+    "must not ship the bring-up/testing single-board firmware");
+});
+test("matrix: clock maps to bandgap-gamma-clock", () =>
+  eq(FIRMWARE_MATRIX["Pixlpro"]["clock"].uuid, HWID["bandgap-gamma-clock"]));
+
+const allEntries = Object.entries(FIRMWARE_MATRIX)
+  .flatMap(([family, models]) => Object.entries(models).map(([k, v]) => [`${family}/${k}`, v]));
+
+test("matrix: every entry has a well-formed uuid", () => {
+  for (const [where, entry] of allEntries) {
+    assert(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(entry.uuid),
+      `${where} has a malformed uuid: ${entry.uuid}`);
+  }
+});
+test("matrix: no uuid is reused across products", () => {
+  const seen = new Map();
+  for (const [where, entry] of allEntries) {
+    assert(!seen.has(entry.uuid), `${entry.uuid} used by both ${seen.get(entry.uuid)} and ${where}`);
+    seen.set(entry.uuid, where);
+  }
+});
+test("matrix: every entry has a flash address and a dropdown label", () => {
+  for (const [where, entry] of allEntries) {
+    assert(Number.isFinite(entry.address), `${where} has no numeric address`);
+    assert(typeof entry.label === "string" && entry.label.length > 0, `${where} has no label`);
+  }
+});
+test("matrix: legacy and new never share a hardware id", () => {
+  const legacy = new Set(Object.values(FIRMWARE_MATRIX["Legacy Pixlpro"]).map((e) => e.uuid));
+  for (const entry of Object.values(FIRMWARE_MATRIX["Pixlpro"])) {
+    assert(!legacy.has(entry.uuid), `${entry.uuid} appears in both module generations`);
+  }
+});
+
+test("modelOptionsFor: unknown family -> no options", () => eq(modelOptionsFor("Nope").length, 0));
+test("modelOptionsFor: null family -> no options", () => eq(modelOptionsFor(null).length, 0));
+test("modelOptionsFor: labels are human-readable, not raw keys", () => {
+  const clock = modelOptionsFor("Pixlpro").find((o) => o.value === "clock");
+  eq(clock.label, "Clock");
+});
+test("modelOptionsFor: every option resolves back to a matrix entry", () => {
+  for (const family of Object.keys(FIRMWARE_MATRIX)) {
+    for (const opt of modelOptionsFor(family)) {
+      assert(FIRMWARE_MATRIX[family][opt.value], `${family}/${opt.value} has no firmware entry`);
+    }
+  }
+});
+
+// --- planBaudRates (serial link speed for a flash session) ---
+// Regression cover for the double baud switch that broke every legacy (CP210x) flash:
+// ESPLoader.main() switches to `baudrate` itself when it differs from `romBaudrate`, so a
+// caller that ALSO calls changeBaud() sends the switch twice. The second one tells the stub
+// its current baud is 115200 while the link already runs at 921600, the stub rescales its
+// UART divider by 115200/921600, and every later command times out with "No serial data
+// received." `switchedByMain` is the flag that keeps callers out of that business.
+const plan13 = planBaudRates(portBridge(makeFakePort({ vid: 0x10c4 })));
+const planS3 = planBaudRates(portBridge(makeFakePort({ vid: 0x303a })));
+
+test("planBaudRates: cp210x syncs at 115200", () => eq(plan13.romBaudrate, 115200));
+test("planBaudRates: cp210x flashes at 921600", () => eq(plan13.baudrate, 921600));
+test("planBaudRates: cp210x switch is owned by loader.main()", () => eq(plan13.switchedByMain, true));
+
+test("planBaudRates: s3-native syncs at 115200", () => eq(planS3.romBaudrate, 115200));
+test("planBaudRates: s3-native stays at 115200 (USB speed is fixed)", () => eq(planS3.baudrate, 115200));
+test("planBaudRates: s3-native never switches baud", () => eq(planS3.switchedByMain, false));
+
+test("planBaudRates: switchedByMain is exactly baudrate !== romBaudrate", () => {
+  for (const p of [plan13, planS3]) eq(p.switchedByMain, p.baudrate !== p.romBaudrate);
+});
+test("planBaudRates: unknown bridge is treated as a UART bridge", () =>
+  eq(planBaudRates(portBridge(makeFakePort({ vid: 0x1a86 }))).baudrate, 921600));
+test("planBaudRates: missing port info doesn't throw", () =>
+  eq(planBaudRates(null).romBaudrate, 115200));
+test("planBaudRates: rates are overridable", () => {
+  const p = planBaudRates(portBridge(makeFakePort({ vid: 0x10c4 })), { fast: 460800, rom: 74880 });
+  eq(p.baudrate, 460800); eq(p.romBaudrate, 74880); eq(p.switchedByMain, true);
+});
+test("planBaudRates: equal fast/rom means main() must not switch", () =>
+  eq(planBaudRates(portBridge(makeFakePort({ vid: 0x10c4 })), { fast: 115200 }).switchedByMain, false));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

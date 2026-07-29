@@ -1,39 +1,11 @@
 import {
   KNOWN_DEVICE_FILTERS, portBridge, classifyConnectError,
   detectPlatform, driverLinkFor, normalizeChipFamily, describeHardware, isPortChipMismatch,
-  hardwareTipFor, parseSha256, bytesToHex
+  hardwareTipFor, parseSha256, bytesToHex, planBaudRates,
+  FIRMWARE_MATRIX, modelOptionsFor
 } from "./device_detection.js";
 
-const FIRMWARE_MATRIX = {
-  "Legacy Pixlpro": {
-    "13": {
-      uuid: "ac79bb5e-dc0c-4799-bcc4-2587fd898faf",
-      address: 0x0,
-      label: "ESP32 · 13 inch"
-    },
-    "15": {
-      uuid: "d89d2bbd-d65c-4ec0-abd7-9967e0a461dd",
-      address: 0x0,
-      label: "ESP32 · 15 inch"
-    }
-  },
-  "Pixlpro": {
-    "13": {
-      uuid: "0c80a421-3cfb-4a5e-b93e-3f0024689582",
-      address: 0x0,
-      label: "ESP32-S3 · 13 inch"
-    },
-    "15": {
-      uuid: "2e40e56e-d0ed-4568-9879-c6938f52e773",
-      address: 0x0,
-      label: "ESP32-S3 · 15 inch"
-    }
-  }
-};
-
 const SUPPORTS_WEB_SERIAL = "serial" in navigator;
-const BAUD_RATE = 921600;
-const INITIAL_BAUD_RATE = 115200;
 const PLATFORM = detectPlatform();
 
 // esptool-js is vendored locally (assets/vendor/esptool-bundle.js — verified byte-identical to the
@@ -59,7 +31,7 @@ const elements = {
   connectButton: document.getElementById("connectButton"),
   flashButton: document.getElementById("flashButton"),
   disconnectButton: document.getElementById("disconnectButton"),
-  panelSize: document.getElementById("panelSize"),
+  model: document.getElementById("model"),
   firmwareVersion: document.getElementById("firmwareVersion"),
   uploadProgress: document.getElementById("uploadProgress"),
   uploadProgressText: document.getElementById("uploadProgressText"),
@@ -114,7 +86,7 @@ function setBusy(busy) {
   state.busy = busy;
   elements.connectButton.disabled = busy || !!state.port;
   elements.disconnectButton.disabled = busy || !state.port;
-  elements.panelSize.disabled = busy || !state.chipFamily;
+  elements.model.disabled = busy || !state.chipFamily;
   updateFirmwareDisplay();
 }
 
@@ -136,12 +108,37 @@ function setUploadProgress(percent, visible) {
   }
 }
 
-function updateFirmwareDisplay() {
-  const size = elements.panelSize.value;
-  const family = state.chipFamily;
-  const entry = size && family ? FIRMWARE_MATRIX?.[family]?.[size] : null;
+// Rebuilds the model dropdown for the connected module generation. Options come from
+// FIRMWARE_MATRIX via modelOptionsFor(), so a model can never be offered without firmware
+// behind it — the legacy module gets the two panel sizes, the new one also gets the cable
+// hider and the clock.
+function populateModelOptions() {
+  const select = elements.model;
+  if (!select) return;
+  select.replaceChildren();
 
-  if (!size || !family || !entry || !state.loader) {
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.selected = true;
+  placeholder.hidden = true;
+  placeholder.textContent = "Select a model";
+  select.appendChild(placeholder);
+
+  for (const option of modelOptionsFor(state.chipFamily)) {
+    const el = document.createElement("option");
+    el.value = option.value;
+    el.textContent = option.label;
+    select.appendChild(el);
+  }
+  select.disabled = !state.chipFamily;
+}
+
+function updateFirmwareDisplay() {
+  const model = elements.model.value;
+  const family = state.chipFamily;
+  const entry = model && family ? FIRMWARE_MATRIX?.[family]?.[model] : null;
+
+  if (!model || !family || !entry || !state.loader) {
     if (elements.firmwareVersion) {
       elements.firmwareVersion.textContent = "—";
     }
@@ -197,7 +194,6 @@ async function resolveLatestFirmwareInfo(uuid) {
   // sha256sum_full.txt is the checksum of firmware_full.bin specifically (the bytes we flash);
   // the sibling sha256sum.txt covers firmware.bin, which is a different artifact.
   const sha256Url = `${indexBase}/sha256sum_full.txt`;
-  log(`resolved ${firmwareUrl} as URL for uuid ${uuid}`);
   return { version, firmwareUrl, sha256Url };
 }
 
@@ -298,19 +294,14 @@ async function connectToDevice() {
       write(data) { log(data); },
     }
 
-    // ESP32-S3 native USB-Serial-JTAG (VID 0x303a) runs the link at a fixed USB speed — the
-    // "baud rate" is a fiction there, so pushing it to 921600 buys nothing and desyncs the
-    // flash ("Invalid head of packet"). Only the CP210x UART bridge (legacy panels) actually
-    // benefits from the faster baud, so use it there and stay at 115200 on native USB.
-    const isNativeUsb = portBridge(port).bridge === "s3-native";
-    const flashBaud = isNativeUsb ? INITIAL_BAUD_RATE : BAUD_RATE;
-
+    // `romBaudrate` is what the ROM-loader sync runs at; `baudrate` is the target the link
+    // moves to once the stub is up. loader.main() performs that switch itself — see
+    // planBaudRates() for why nothing here may switch the baud a second time.
+    const baudPlan = planBaudRates(portBridge(port));
     const ldOptions = {
       transport: transport,
-      // `baudrate` is the TARGET baud that changeBaud() switches to after the handshake;
-      // `romBaudrate` is what the ROM-loader sync runs at.
-      baudrate: flashBaud,
-      romBaudrate: INITIAL_BAUD_RATE,
+      baudrate: baudPlan.baudrate,
+      romBaudrate: baudPlan.romBaudrate,
       terminal: terminalInterface,
     }
 
@@ -363,24 +354,17 @@ async function connectToDevice() {
     elements.chipType.classList.remove("status__value--muted");
     log(`Connected to ${hw.label}`);
 
-    if (typeof loader.loadStub === "function") {
-      try {
-        log("Loading stub flasher…");
-        await loader.loadStub();
-      } catch (error) {
-        log(`Stub flasher not loaded (continuing): ${error.message ?? error}`);
-        console.warn(error);
-      }
-    }
-    // changeBaud() moves the link to the ESPLoader's `baudrate` option. Skip it on native USB,
-    // where the target is already the ROM baud (115200) and a high-baud switch only desyncs
-    // the flash. loader.main() already performs this switch when target != romBaudrate, so this
-    // is a belt-and-suspenders call for the CP210x path only.
-    if (flashBaud !== INITIAL_BAUD_RATE && typeof loader.changeBaud === "function") {
-      log(`Switching baud rate to ${flashBaud}…`);
-      await loader.changeBaud();
-    }
-    elements.panelSize.disabled = false;
+    // No stub upload or changeBaud() call belongs here: loader.main() above already did both,
+    // in that order. Repeating the baud switch is not harmless — changeBaud() reports
+    // `romBaudrate` as the stub's current rate, which stops being true the moment the first
+    // switch lands, so a second call leaves the chip transmitting ~8x too fast and the flash
+    // dies on its first command. planBaudRates() carries the full explanation.
+    log(baudPlan.switchedByMain
+      ? `Link running at ${baudPlan.baudrate} baud.`
+      : `Link running at ${baudPlan.baudrate} baud (native USB — fixed speed).`);
+    // Which models are offered depends on the chip we just identified, so the dropdown is
+    // built here rather than in the markup.
+    populateModelOptions();
     updateFirmwareDisplay();
   } catch (error) {
     log(`❌ ${error.message ?? error}`);
@@ -402,7 +386,7 @@ elements.disconnectButton.addEventListener("click", () => {
   disconnectDevice();
 });
 
-elements.panelSize.addEventListener("change", () => {
+elements.model.addEventListener("change", () => {
   updateFirmwareDisplay();
 });
 
@@ -473,11 +457,10 @@ async function flashBinary(loader, fileEntry, options) {
 }
 
 async function flashSelectedFirmware() {
-  if (!state.loader || !state.chipFamily || !elements.panelSize.value) {
+  if (!state.loader || !state.chipFamily || !elements.model.value) {
     return;
   }
-  log(`fetching firmware for ${state.chipFamily}, ${elements.panelSize.value}`);
-  const firmwareEntry = FIRMWARE_MATRIX[state.chipFamily]?.[elements.panelSize.value];
+  const firmwareEntry = FIRMWARE_MATRIX[state.chipFamily]?.[elements.model.value];
   if (!firmwareEntry) {
     log("No firmware available for this selection.");
     return;
@@ -567,8 +550,9 @@ async function disconnectDevice(force = false) {
     elements.connectionStatus.textContent = "Disconnected";
     elements.chipType.textContent = "—";
     elements.chipType.classList.add("status__value--muted");
-    elements.panelSize.value = "";
-    elements.panelSize.disabled = true;
+    // chipFamily is now null, so this empties the dropdown and disables it — no stale model
+    // list from the previous device survives a disconnect.
+    populateModelOptions();
     latestFirmwareRequestId++;
     if (elements.firmwareVersion) {
       elements.firmwareVersion.textContent = "—";

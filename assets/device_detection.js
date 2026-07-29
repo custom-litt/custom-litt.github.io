@@ -60,6 +60,38 @@ export function classifyConnectError(error) {
   return "unknown";
 }
 
+/** Serial speeds for a flash session. `ROM` is the rate the ROM bootloader syncs at. */
+export const BAUD = { ROM: 115200, FAST: 921600 };
+
+/**
+ * Decide the serial link speeds for a flash session from the selected port.
+ *
+ * Returns `{ romBaudrate, baudrate, switchedByMain }` — the first two go straight into the
+ * ESPLoader options; `switchedByMain` records whether that pair makes ESPLoader.main()
+ * change the baud on its own.
+ *
+ * IMPORTANT — main() owns the switch, callers must not repeat it. esptool-js runs
+ * `romBaudrate !== baudrate && await this.changeBaud()` right after it uploads the stub, and
+ * changeBaud() sends `romBaudrate` as the stub's "what you're running at now" reference:
+ *
+ *     const old = this.IS_STUB ? this.romBaudrate : 0;   // hardcoded, not the live rate
+ *     await this.command(this.ESP_CHANGE_BAUDRATE, [this.baudrate, old]);
+ *
+ * The stub rescales its UART divider by `old / new`, so that reference is only true the first
+ * time. Call changeBaud() a second time and the stub is told it sits at 115200 when the link
+ * already runs at 921600 — it divides by eight, ends up transmitting near 7.4 Mbaud, and the
+ * host never sees another byte. The next command (FLASH_DEFL_BEGIN, the first one a flash
+ * issues) dies on the 3 s DEFAULT_TIMEOUT with "No serial data received."
+ *
+ * ESP32-S3 native USB-Serial-JTAG (VID 0x303a) has no UART divider to change — the link runs
+ * at USB speed and the "baud rate" is a fiction — so it stays at the ROM rate and never
+ * switches. Only a real UART bridge (CP210x, on the legacy panels) gains anything from 921600.
+ */
+export function planBaudRates(portInfo, { fast = BAUD.FAST, rom = BAUD.ROM } = {}) {
+  const baudrate = portInfo?.bridge === "s3-native" ? rom : fast;
+  return { romBaudrate: rom, baudrate, switchedByMain: baudrate !== rom };
+}
+
 const CP210X_DRIVER_URL = "https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers";
 
 /** CP210x VCP driver download (or null on Linux, where cp210x is in-kernel). */
@@ -125,6 +157,58 @@ export function normalizeChipFamily(rawName) {
   if (lowered.includes("s3")) return "Pixlpro";
   if (lowered.includes("esp32")) return "Legacy Pixlpro";
   return null;
+}
+
+/**
+ * Which products each module generation can be flashed as, and the firmware hardware ID for
+ * each. Keyed by the chip family that normalizeChipFamily() returns, because the chip is the
+ * ONLY thing the flasher can actually detect.
+ *
+ * Why the model can't be auto-detected: a product's hardware ID lives in its firmware image,
+ * not in the board. The firmware build embeds `hardware_id.txt` into the binary
+ * (CMake EMBED_TXTFILES) and the running app reports it via Board::GetHardwareId(). The flasher
+ * talks to the ROM/stub bootloader in download mode, where no app is running — and even reading
+ * the ID out of the currently-installed image would only say what was flashed last, not what
+ * the board is, so a device mis-flashed once would stay mis-flashed forever. A clock and a 13"
+ * panel are the same ESP32-S3 as far as the wire is concerned.
+ *
+ * So the operator picks the model, and these UUIDs are the only thing keeping panel firmware
+ * off a clock. Source of truth for the mapping: pixlpro/firmware/out/README.md.
+ * `bandgap-cable-hider-single` (910105d3…) is deliberately absent — it's the one-board
+ * bring-up/testing build, not a product.
+ *
+ * Insertion order is dropdown order.
+ */
+export const FIRMWARE_MATRIX = {
+  // Legacy module: ESP32, CP210x bridge. Panels only.
+  "Legacy Pixlpro": {
+    "13": { uuid: "ac79bb5e-dc0c-4799-bcc4-2587fd898faf", address: 0x0, label: "13 inch" },
+    "15": { uuid: "d89d2bbd-d65c-4ec0-abd7-9967e0a461dd", address: 0x0, label: "15 inch" },
+  },
+  // New "bandgap" module: ESP32-S3. Panels plus the cable hider and clock form factors.
+  "Pixlpro": {
+    "13":           { uuid: "0c80a421-3cfb-4a5e-b93e-3f0024689582", address: 0x0, label: "13 inch" },
+    "15":           { uuid: "2e40e56e-d0ed-4568-9879-c6938f52e773", address: 0x0, label: "15 inch" },
+    // `hidden` keeps a model plumbed in but off the dropdown. Cable hider's firmware isn't
+    // published under api/ yet, so offering it would only ever resolve "Unavailable" — drop
+    // this flag once the firmware lands and it works with no other change.
+    "cable-hider":  { uuid: "3481efbd-8ada-42e4-ab3f-05968546e82d", address: 0x0, label: "Cable hider", hidden: true },
+    "clock":        { uuid: "8949218b-432c-4ffe-8f7d-73e80421fd1f", address: 0x0, label: "Clock" },
+  },
+};
+
+/**
+ * Ordered dropdown options for a chip family: `[{ value, label }]`, empty for an unknown or
+ * missing family. Generated FROM FIRMWARE_MATRIX rather than listed separately, so an option
+ * can never exist without firmware behind it. Entries marked `hidden` are skipped — they stay
+ * flashable in the matrix but aren't offered to the operator.
+ */
+export function modelOptionsFor(chipFamily) {
+  const models = chipFamily ? FIRMWARE_MATRIX[chipFamily] : null;
+  if (!models) return [];
+  return Object.entries(models)
+    .filter(([, entry]) => !entry.hidden)
+    .map(([value, entry]) => ({ value, label: entry.label }));
 }
 
 /** Merge the pre-connect port hint with the authoritative chip family into a label + generation. */
