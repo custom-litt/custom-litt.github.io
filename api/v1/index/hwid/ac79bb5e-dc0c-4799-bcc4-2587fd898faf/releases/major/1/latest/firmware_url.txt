@@ -1,0 +1,1 @@
+https://custom-litt.github.io/api/v1/bin/firmware/ac79bb5e-dc0c-4799-bcc4-2587fd898faf/v1.0.0/firmware.bin
